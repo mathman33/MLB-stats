@@ -7,8 +7,8 @@ teamstamp = {
         # West
     "Los Angeles Dodgers": "LAD",
     "Arizona Diamondbacks": "ARI",
-    "San Francisco Giants": "",
-    "Colorado Rockies": "",
+    "San Francisco Giants": "SFG",
+    "Colorado Rockies": "COL",
     "San Diego Padres": "SDP",
         # Central
     "Chicago Cubs": "CHC",
@@ -17,7 +17,7 @@ teamstamp = {
     "Pittsburgh Pirates": "PIT",
     "Milwaukee Brewers": "MIL",
         # East
-    "Miami Marlins": "MIA",
+    "Miami Marlins": "FLA",
     "New York Mets": "NYM",
     "Washington Nationals": "WSN",
     "Atlanta Braves": "ATL",
@@ -32,7 +32,7 @@ teamstamp = {
     "Houston Astros": "HOU",
 
         # Central
-    "Chicago White Sox": "CWS",
+    "Chicago White Sox": "CHW",
     "Cleveland Indians": "CLE",
     "Detroit Tigers": "DET",
     "Kansas City Royals": "KCR",
@@ -41,7 +41,7 @@ teamstamp = {
         # East
     "Boston Red Sox": "BOS",
     "Baltimore Orioles": "BAL",
-    "Tampa Bay Rays": "TBR",
+    "Tampa Bay Rays": "TBD",
     "New York Yankees": "NYY",
     "Toronto Blue Jays": "TOR"
 }
