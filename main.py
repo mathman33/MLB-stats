@@ -203,7 +203,7 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
     substitution_patterns.append(fielding_substitution_pattern)
     substitution_patterns.append(move_pattern)
 
-    play_by_play_data = {}
+    play_by_play_data = []
 
     for row in rows:
         if row.has_attr('class'):
@@ -220,6 +220,19 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                 pitcher = m.group(8)
                 batting_order = m.group(9)
 
+                pre_half_inning_summary = {
+                    "top_or_bottom": top_or_bottom,
+                    "inning": inning,
+                    "batting_team": batting_team,
+                    "batting_team_winning_losing": batting_team_winning_losing,
+                    "batting_team_score": batting_team_score,
+                    "pitching_team_score": pitching_team_score,
+                    "pitching_team": pitching_team,
+                    "pitcher": pitcher,
+                    "batting_order": batting_order
+                }
+                play_by_play_data.append(("pre_half_inning_summary",pre_half_inning_summary))
+
             elif row['class'][0] == u'pbp_summary_bottom':
                 half_inning_summary = row.get_text()
                 m = re.search(r"(.*) runs?, (.*) hits?, (.*) errors?, (.*) LOB. (.*) (.*), (.*) (.*).", half_inning_summary)
@@ -232,12 +245,24 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                 home_team = m.group(7)
                 home_team_score = int(m.group(8))
 
+                post_half_inning_summary = {
+                    "runs": runs,
+                    "hits": hits,
+                    "errors": errors,
+                    "LOB": LOB,
+                    "away_team": away_team,
+                    "away_team_score": away_team_score,
+                    "home_team": home_team,
+                    "home_team_score": home_team_score
+                }
+                play_by_play_data.append(("post_half_inning_summary",post_half_inning_summary))
+
             elif u'top_inning' in row['class'][0] or u'bottom_inning' in row['class'][0]:
                 columns = row.find_all('td')
-                score = columns[0].get_text()
-                m = re.search(r"(.*)-(.*)", score)
-                batting_team_score = m.group(1)
-                pitching_team_score = m.group(2)
+                pre_AB_score = columns[0].get_text()
+                m = re.search(r"(.*)-(.*)", pre_AB_score)
+                pre_AB_batting_team_score = m.group(1)
+                pre_AB_pitching_team_score = m.group(2)
                 outs = columns[1].get_text()
                 runners = columns[2].get_text()
                 pitches = columns[3].get_text()
@@ -246,6 +271,8 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                 balls_at_event = m.group(2)
                 strikes_at_event = m.group(3)
                 runs_and_outs = columns[4].get_text()
+                resulting_runs = int(runs_and_outs.count("R"))
+                resulting_outs = int(runs_and_outs.count("O"))
                 batting_teamstamp = columns[5].get_text()
                 batter = columns[6].get_text()
                 pitcher = columns[7].get_text()
@@ -257,10 +284,28 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                 wWE = int(m.group(1))
                 description = columns[10].get_text()
                 events = description.split('; ')
-                if u'bold' in row['class'][0]:
-                    score = True
-                else:
-                    score = False
+                score = u'bold' in row['class'][0]
+
+                batter = {
+                    "pre_AB_batting_team_score": pre_AB_batting_team_score,
+                    "pre_AB_pitching_team_score": pre_AB_pitching_team_score,
+                    "outs": outs,
+                    "runners": runners,
+                    "num_pitches": num_pitches,
+                    "balls_at_event": balls_at_event,
+                    "strikes_at_event": strikes_at_event,
+                    "resulting_runs": resulting_runs,
+                    "resulting_outs": resulting_outs,
+                    "batting_teamstamp": batting_teamstamp,
+                    "batter": batter,
+                    "pitcher": pitcher,
+                    "wWPA": wWPA,
+                    "wWE": wWE,
+                    "events": events,
+                    "score": score
+                }
+                play_by_play_data.append(("batter",batter))
+            
             elif row['class'][0] == u'ingame_substitution':
                 columns = row.find_all("td")
                 event = columns[8].get_text()
@@ -313,11 +358,86 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                                     break_out = True
                     else:
                         break
+                play_by_play_data.append(("substitutions",subs_list))
+
             else:
                 print "unknown class in play-by-play table"
         else:
             columns = row.find_all("td")
             event = columns[8].get_text()
+            play_by_play_data.append(("miscellaneous event", event))
+    return play_by_play_data
+
+def scrape_pitching_data(pitching_html):
+    overthrow = pitching_html.find("div", attrs={"class": "overthrow"})
+    tbody = overthrow.find("tbody")
+    rows = tbody.find_all("tr")
+    
+    pitching_data = {}
+
+    for row in rows:
+        player_data = {}
+        name_and_result = row.find("th").get_text()
+        m = re.search(r"(.*), (.*)", name_and_result)
+        if m:
+            player_name = m.group(1)
+        else:
+            player_name = name_and_result
+
+        player_data["name"] = player_name
+
+        pitching_stats = row.find_all("td")
+        player_data["IP"] = pitching_stats[0].get_text()
+        if player_data["IP"] != u'': player_data["IP"] = float(player_data["IP"])
+        player_data["H"] = pitching_stats[1].get_text()
+        if player_data["H"] != u'': player_data["H"] = int(player_data["H"])
+        player_data["R"] = pitching_stats[2].get_text()
+        if player_data["R"] != u'': player_data["R"] = int(player_data["R"])
+        player_data["ER"] = pitching_stats[3].get_text()
+        if player_data["ER"] != u'': player_data["ER"] = int(player_data["ER"])
+        player_data["BB"] = pitching_stats[4].get_text()
+        if player_data["BB"] != u'': player_data["BB"] = int(player_data["BB"])
+        player_data["SO"] = pitching_stats[5].get_text()
+        if player_data["SO"] != u'': player_data["SO"] = int(player_data["SO"])
+        player_data["HR"] = pitching_stats[6].get_text()
+        if player_data["HR"] != u'': player_data["HR"] = int(player_data["HR"])
+        player_data["ERA"] = pitching_stats[7].get_text()
+        if player_data["ERA"] != u'': player_data["ERA"] = float(player_data["ERA"])
+        player_data["BF"] = pitching_stats[8].get_text()
+        if player_data["BF"] != u'': player_data["BF"] = int(player_data["BF"])
+        player_data["Pit"] = pitching_stats[9].get_text()
+        if player_data["Pit"] != u'': player_data["Pit"] = int(player_data["Pit"])
+        player_data["Str"] = pitching_stats[10].get_text()
+        if player_data["Str"] != u'': player_data["Str"] = int(player_data["Str"])
+        player_data["Ctct"] = pitching_stats[11].get_text()
+        if player_data["Ctct"] != u'': player_data["Ctct"] = int(player_data["Ctct"])
+        player_data["StS"] = pitching_stats[12].get_text()
+        if player_data["StS"] != u'': player_data["StS"] = int(player_data["StS"])
+        player_data["StL"] = pitching_stats[13].get_text()
+        if player_data["StL"] != u'': player_data["StL"] = int(player_data["StL"])
+        player_data["GB"] = pitching_stats[14].get_text()
+        if player_data["GB"] != u'': player_data["GB"] = int(player_data["GB"])
+        player_data["FB"] = pitching_stats[15].get_text()
+        if player_data["FB"] != u'': player_data["FB"] = int(player_data["FB"])
+        player_data["LD"] = pitching_stats[16].get_text()
+        if player_data["LD"] != u'': player_data["LD"] = int(player_data["LD"])
+        player_data["Unk"] = pitching_stats[17].get_text()
+        if player_data["Unk"] != u'': player_data["Unk"] = int(player_data["Unk"])
+        player_data["GSc"] = pitching_stats[18].get_text()
+        if player_data["GSc"] != u'': player_data["GSc"] = int(player_data["GSc"])
+        player_data["IR"] = pitching_stats[19].get_text()
+        if player_data["IR"] != u'': player_data["IR"] = int(player_data["IR"])
+        player_data["IS"] = pitching_stats[20].get_text()
+        if player_data["IS"] != u'': player_data["IS"] = int(player_data["IS"])
+        player_data["WPA"] = pitching_stats[21].get_text()
+        if player_data["WPA"] != u'': player_data["WPA"] = float(player_data["WPA"])
+        player_data["aLI"] = pitching_stats[22].get_text()
+        if player_data["aLI"] != u'': player_data["aLI"] = float(player_data["aLI"])
+        player_data["RE24"] = pitching_stats[23].get_text()
+        if player_data["RE24"] != u'': player_data["RE24"] = float(player_data["RE24"])
+        
+        pitching_data[player_name] = player_data
+    return pitching_data
 
 def scrape_game_data(game_link):
     html = remove_comments(urllib2.urlopen(game_link).read())
@@ -334,8 +454,8 @@ def scrape_game_data(game_link):
     tables = soup.find_all("div", attrs={"class","table_wrapper"})
     away_batting_data = scrape_batting_data(tables[0])
     home_batting_data = scrape_batting_data(tables[1])
-    # away_pitching_data = scrape_pitching_data(tables[2])
-    # home_pitching_data = scrape_pitching_data(tables[3])
+    away_pitching_data = scrape_pitching_data(tables[2])
+    home_pitching_data = scrape_pitching_data(tables[3])
     # top_5_plays = scrape_top_5_plays_data(tables[4])
     play_by_play_data = scrape_play_by_play_data(tables[5], home_team_league)
 
