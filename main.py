@@ -108,11 +108,14 @@ def scrape_box_data(linescore):
 
     bottom_text_soup = linescore.find('tfoot')
     bottom_text_list = bottom_text_soup.find_all('tr')
+    
     t = bottom_text_list[0].get_text()
-    m = re.search(r'(?<=WP:.)(.*)(?=.\(.{1,2}-.{1,2}\).)', t)
-    box_data["winning_pitcher"] = str(m.group().replace(u'\xa0', u' '))
-    m = re.search(r'(?<=LP:.)(.*)(?=.\()', t)
-    box_data["losing_pitcher"] = str(m.group().replace(u'\xa0', u' '))
+    m = re.search(r'WP:.(.*).\(\d{1,2}-\d{1,2}\).{3}LP:.(.*).\(\d{1,2}-\d{1,2}\)(.?.?.?S?V?:?.?(.*)?.+?\(\d{1,2}\)?)?', t)
+    box_data["winning_pitcher"] = m.group(1)
+    box_data["losing_pitcher"] = m.group(2)
+    if len(m.groups()) == 4:
+        box_data["saving_pitcher"] = m.group(4)
+
     if len(bottom_text_list) > 1:
         box_data["extra_text"] = str(bottom_text_list[1].get_text())
     else:
@@ -179,22 +182,25 @@ def scrape_batting_data(batting_html):
             player_data["PO"] = int(PO) if PO != u'' else ""
             A = batting_stats[19].get_text()
             player_data["A"] = int(A) if A != u'' else ""
-            player_data["Details"] = str(batting_stats[20].get_text())
+            
+            player_data["Details"] = str(batting_stats[20].get_text().replace(u'\xb7',u''))
 
             batting_data[player_name] = player_data
     return batting_data
 
-def scrape_play_by_play_data(play_by_play_html, home_team_league):
+def scrape_play_by_play_data(play_by_play_html, home_team_league, names):
+    regex_names = "|".join(names)
+    
     overthrow = play_by_play_html.find("div", attrs={"class": "overthrow"})
     tbody = overthrow.find("tbody")
     rows = tbody.find_all("tr")
 
-    national_league_pitching_substitution_pattern = r"(.*?) replaces (.*?) pitching and batting (\d)(th|rd|st|nd)?"
-    american_league_pitching_substitution_pattern = r"(.*?) replaces (.*?) pitching?"
-    pinch_hitter_pattern = r"(.*?) pinch hits for (.{0,55}) \((.{1,3})\) batting (\d)(th|rd|st|nd)?"
-    pinch_runner_pattern = r"(.*?) pinch runs for (.{0,55}) \((.{1,3})\) batting (\d)(th|rd|st|nd)?"
-    fielding_substitution_pattern = r"(.*?) replaces (.*) \((.*)\) playing (.*) batting (\d)(th|rd|st|nd)?"
-    move_pattern = r"(.*?) moves from (P|1B|2B|3B|SS|LF|RF|CF?|PH|PR|DH?) to (P|1B|2B|3B|SS|LF|RF|CF?|PH|PR|DH?)"
+    national_league_pitching_substitution_pattern = r"(%s) replaces (%s)( \((.*)\))? pitching and batting (\d)(th|rd|st|nd)+" % (regex_names,regex_names)
+    american_league_pitching_substitution_pattern = r"(%s) replaces (%s) pitching" % (regex_names,regex_names)
+    pinch_hitter_pattern = r"(%s) pinch hits for (%s) \((1B|2B|3B|SS|LF|RF|CF?|PH?|PR|DH)\) batting (\d)(th|rd|st|nd)+?" % (regex_names,regex_names)
+    pinch_runner_pattern = r"(%s) pinch runs for (%s) \((1B|2B|3B|SS|LF|RF|CF?|PH?|PR|DH)\) batting (\d)(th|rd|st|nd)+?" % (regex_names,regex_names)
+    fielding_substitution_pattern = r"(%s) replaces (%s)( \((.*)\))? playing (1B|2B|3B|SS|LF|RF|CF?|PH?|PR|DH) batting (\d)(th|rd|st|nd)+?" % (regex_names,regex_names)
+    move_pattern = r"(%s) moves from (1B|2B|3B|SS|LF|RF|CF?|PH?|PR|DH) to (1B|2B|3B|SS|LF|RF|CF?|PH?|PR|DH)+?" % regex_names
     if home_team_league == "NL":
         substitution_patterns = [national_league_pitching_substitution_pattern]
     elif home_team_league == "AL":
@@ -210,7 +216,7 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
         if row.has_attr('class'):
             if row['class'][0] == u'pbp_summary_top':
                 half_inning_summary = row.get_text()
-                m = re.search(r"(Top|Bottom) of the (\d{1,2})(th|rd|st|nd), (.{0,55}) Batting, (Tied|Ahead|Behind) (\d{1,2})-(\d{1,2}), (.*)' (.*) facing (\d-\d-\d)", half_inning_summary)
+                m = re.search(r"(Top|Bottom) of the (\d{1,2})(th|rd|st|nd), (.*) Batting, (Tied|Ahead|Behind) (\d{1,2})-(\d{1,2}), (.*)' (.*) facing (\d-\d-\d)", half_inning_summary)
                 top_or_bottom = str(m.group(1))
                 inning = int(m.group(2))
                 batting_team = str(m.group(4))
@@ -310,8 +316,9 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
             
             elif row['class'][0] == u'ingame_substitution':
                 columns = row.find_all("td")
-                event = columns[8].get_text()
+                event = columns[8].get_text().replace(u'\xa0',u' ')
                 num_subs = event.count("replaces") + event.count("moves") + event.count("pinch hits") + event.count("pinch runs")
+
 
                 subs_list = []
                 
@@ -326,42 +333,43 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                         for i, pattern in enumerate(substitution_patterns):
                             m = re.search(pattern, event)
                             if m:
-                                substitution = m.group()
                                 substitution_data = {}
                                 if i == 0:
                                     substitution_data["type"] = "pitching change"
-                                    substitution_data["incoming_pitcher"] = str(m.group(1).replace(u'\xa0',u' '))
-                                    substitution_data["outgoing_pitcher"] = str(m.group(2).replace(u'\xa0',u' '))
+                                    substitution_data["incoming_pitcher"] = str(m.group(1))
+                                    substitution_data["outgoing_pitcher"] = str(m.group(2))
                                     if home_team_league == "NL":
-                                        substitution_data["batting_order"] = int(m.group(3).replace(u'\xa0',u' '))
+                                        substitution_data["batting_order"] = int(m.group(5))
+                                        if m.group(4) != None:
+                                            substitution_data["outgoing_position"] = str(m.group(4))
                                 elif i == 1:
                                     substitution_data["type"] = "pinch hitter"
-
-                                    # for K in xrange(8):
-                                    #     print K, m.group(K)
-
-                                    substitution_data["pinch_hitter"] = str(m.group(1).replace(u'\xa0',u' '))
-                                    substitution_data["outgoing_hitter"] = str(m.group(2).replace(u'\xa0',u' '))
-                                    substitution_data["field_position"] = str(m.group(3).replace(u'\xa0',u' '))
-                                    substitution_data["batting_order"] = int(m.group(4).replace(u'\xa0',u' '))
+                                    substitution_data["pinch_hitter"] = str(m.group(1))
+                                    substitution_data["outgoing_hitter"] = str(m.group(2))
+                                    substitution_data["field_position"] = str(m.group(3))
+                                    substitution_data["batting_order"] = int(m.group(4))
                                 elif i == 2:
                                     substitution_data["type"] = "pinch runner"
-                                    substitution_data["pinch_runner"] = str(m.group(1).replace(u'\xa0',u' '))
-                                    substitution_data["outgoing_runner"] = str(m.group(2).replace(u'\xa0',u' '))
-                                    substitution_data["field_position"] = str(m.group(3).replace(u'\xa0',u' '))
-                                    substitution_data["batting_order"] = int(m.group(4).replace(u'\xa0',u' '))
+                                    substitution_data["pinch_runner"] = str(m.group(1))
+                                    substitution_data["outgoing_runner"] = str(m.group(2))
+                                    substitution_data["field_position"] = str(m.group(3))
+                                    substitution_data["batting_order"] = int(m.group(4))
                                 elif i == 3:
                                     substitution_data["type"] = "defensive substitution"
-                                    substitution_data["incoming_fielder"] = str(m.group(1).replace(u'\xa0',u' '))
-                                    substitution_data["outgoing_fielder"] = str(m.group(2).replace(u'\xa0',u' '))
-                                    substitution_data["outgoing_fielder_position"] = str(m.group(3).replace(u'\xa0',u' '))
-                                    substitution_data["incoming_fielder_position"] = str(m.group(4).replace(u'\xa0',u' '))
-                                    substitution_data["batting_order"] = int(m.group(5).replace(u'\xa0',u' '))
+                                    substitution_data["incoming_fielder"] = str(m.group(1))
+                                    substitution_data["outgoing_fielder"] = str(m.group(2))
+                                    if len(m.groups()) == 7:
+                                        substitution_data["incoming_fielder_position"] = str(m.group(5))
+                                        substitution_data["batting_order"] = int(m.group(6))
+                                    else:
+                                        substitution_data["outgoing_fielder_position"] = str(m.group(3))
+                                        substitution_data["incoming_fielder_position"] = str(m.group(4))
+                                        substitution_data["batting_order"] = int(m.group(5))
                                 elif i == 4:
                                     substitution_data["type"] = "position change"
-                                    substitution_data["moving_player"] = str(m.group(1).replace(u'\xa0',u' '))
-                                    substitution_data["old_position"] = str(m.group(2).replace(u'\xa0',u' '))
-                                    substitution_data["new_position"] = str(m.group(3).replace(u'\xa0',u' '))
+                                    substitution_data["moving_player"] = str(m.group(1))
+                                    substitution_data["old_position"] = str(m.group(2))
+                                    substitution_data["new_position"] = str(m.group(3))
 
                                 subs_list.append(substitution_data)
                                 event = event.replace(m.group(),"")
@@ -371,6 +379,10 @@ def scrape_play_by_play_data(play_by_play_html, home_team_league):
                         break
                 if len(subs_list) != num_subs:
                     print "error regexing"
+                    print subs_list
+                    print "\n\n\n\n\n\n\n\n\n"
+                    time.sleep(1)
+                    raise
                 play_by_play_data.append(["substitutions",subs_list])
 
             else:
@@ -557,8 +569,21 @@ def scrape_pitching_data(pitching_html,indiv_events):
         pitching_data[player_name] = player_data
     return pitching_data
 
+def get_names(b1, b2, p1, p2):
+    names = list(set((b1.keys() + b2.keys() + p1.keys() + p2.keys())))
+    with open("nicknames.txt","r") as f:
+        nickname_contents = f.read()
+    nicknames = []
+    for name in names:
+        if name in nickname_contents:
+            m = re.search(r"%s=(.*)"%name, nickname_contents)
+            if m == None:
+                m = re.search(r"(.*)=%s"%name, nickname_contents)
+            nicknames.append(m.group(1))
+    return list(set(names+nicknames))
+
 def scrape_game_data(game_link):
-    html = remove_comments(urllib2.urlopen("https://www.baseball-reference.com/boxes/SEA/SEA201808180.shtml").read())
+    html = remove_comments(urllib2.urlopen(game_link).read())
 
     game_data = {}
 
@@ -576,8 +601,9 @@ def scrape_game_data(game_link):
     indiv_pitching_data = scrape_indiv_pitching_events_data(indiv_events)
     away_pitching_data = scrape_pitching_data(tables[2],indiv_pitching_data)
     home_pitching_data = scrape_pitching_data(tables[3],indiv_pitching_data)
+    names = get_names(away_batting_data,home_batting_data,away_pitching_data,home_pitching_data)
     # top_5_plays = scrape_top_5_plays_data(tables[4])
-    play_by_play_data = scrape_play_by_play_data(tables[5], home_team_league)
+    play_by_play_data = scrape_play_by_play_data(tables[5], home_team_league, names)
 
     game_data['away_batting'] = away_batting_data
     game_data['home_batting'] = home_batting_data
@@ -599,7 +625,6 @@ def main():
 
     # test date and test page
     date = "/?month=7&day=24&year=2018"
-    date = "/?month=8&day=18&year=2018"
     page = BOX_SCORES_PAGE+date
 
     # get the html using BeautifulSoup
@@ -615,9 +640,7 @@ def main():
         game_links.append(BOX_SCORES_PAGE+link[6:])
 
     for ind, game_link in enumerate(game_links):
-        if ind == 11:
-            game_data = scrape_game_data(game_link)
-            print game_data
+        game_data = scrape_game_data(game_link)
 
 if __name__ == "__main__":
     main()
