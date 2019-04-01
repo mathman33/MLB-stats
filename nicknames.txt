@@ -1,3 +1,5 @@
 Nick Delmonico=Nicky Delmonico
 Mike Wright=Mike Wright Jr.
+Dwight Smith=Dwight Smith Jr.
+Carl Edwards=Carl Edwards Jr.
 Michael A. Taylor=Michael Taylor
